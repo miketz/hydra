@@ -159,6 +159,7 @@ warn: keep KEYMAP and issue a warning instead of running the command."
     (with-selected-frame frame
       (when overriding-terminal-local-map
         (internal-pop-keymap hydra-curr-map 'overriding-terminal-local-map))))
+  (setq hydra-curr-map nil)
   (unless hydra--ignore
     (when hydra-curr-on-exit
       (let ((on-exit hydra-curr-on-exit))
@@ -241,7 +242,7 @@ the body or the head."
 
 (defvar hydra-hint-display-alist
   (list (list 'lv #'lv-message #'lv-delete-window)
-        (list 'message #'message (lambda () (message "")))
+        (list 'message (lambda (str) (message "%s" str)) (lambda () (message "")))
         (list 'posframe #'hydra-posframe-show #'hydra-posframe-hide))
   "Store the functions for `hydra-hint-display-type'.")
 
@@ -318,6 +319,15 @@ Exitable only through a blue head.")
      ("(\\(defhydradio\\)\\_> +\\(.*?\\)\\_>"
       (1 font-lock-keyword-face)
       (2 font-lock-type-face)))))
+
+;;* Imenu
+(defun hydra-add-imenu ()
+  "Add this to `emacs-lisp-mode-hook' to have hydras in `imenu'."
+  (add-to-list
+   'imenu-generic-expression
+   '("Hydras"
+     "^.*(\\(defhydra\\) \\([a-zA-Z-]+\\)"
+     2)))
 
 ;;* Find Function
 (eval-after-load 'find-func
@@ -526,7 +536,6 @@ Remove :color key. And sort the plist alphabetically."
   (hydra-disable)
   (cancel-timer hydra-timeout-timer)
   (cancel-timer hydra-message-timer)
-  (setq hydra-curr-map nil)
   (unless (and hydra--ignore
                (null hydra--work-around-dedicated))
     (funcall
@@ -878,7 +887,8 @@ BODY-AFTER-EXIT is added to the end of the wrapper."
          (hint (intern (format "%S/hint" name)))
          (body-foreign-keys (hydra--body-foreign-keys body))
          (body-timeout (plist-get body :timeout))
-         (body-idle (plist-get body :idle))
+         (idle (or (and (eq (cadr head) 'body) (plist-get body :idle))
+                   (plist-get (nthcdr 3 head) :idle)))
          (curr-body-fn-sym (intern (format "%S/body" name)))
          (body-on-exit-t
           `((hydra-keyboard-quit)
@@ -901,8 +911,8 @@ BODY-AFTER-EXIT is added to the end of the wrapper."
                      ,(hydra--call-interactively cmd (cadr head))
                    ((quit error)
                     (message (error-message-string err)))))
-             ,(if (and body-idle (eq (cadr head) 'body))
-                  `(hydra-idle-message ,body-idle ,hint ',name)
+             ,(if idle
+                  `(hydra-idle-message ,idle ,hint ',name)
                 `(hydra-show-hint ,hint ',name))
              (hydra-set-transient-map
               ,keymap
